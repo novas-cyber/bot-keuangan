@@ -1,8 +1,54 @@
 const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const pino = require('pino');
-const qrcode = require('qrcode-terminal');
+const express = require('express');
+const { toDataURL } = require('qrcode');
+
+const app = express();
+const port = process.env.PORT || 8080;
+
+let latestQR = '';
+let connectionStatus = 'Menghubungkan...';
 
 const UNIVERSAL_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyQFI6i-TjF-YOzH48-_1BRw0lh1-F16NMKB6v45kpyUQmXvUNAjcsU9gJEYinb2t8C";
+
+// Setup Web Server untuk nampilin QR Code di browser HP
+app.get('/', async (req, res) => {
+    if (connectionStatus === 'Terhubung') {
+        return res.send(`
+            <div style="text-align:center; margin-top:50px; font-family:sans-serif;">
+                <h2 style="color:green;">✅ Bot WhatsApp Berhasil Terhubung!</h2>
+                <p>Sesi aktif dan bot sudah siap digunakan.</p>
+            </div>
+        `);
+    }
+
+    if (!latestQR) {
+        return res.send(`
+            <div style="text-align:center; margin-top:50px; font-family:sans-serif;">
+                <h2>⏳ Menyiapkan QR Code...</h2>
+                <p>Silakan refresh halaman ini beberapa saat lagi.</p>
+            </div>
+        `);
+    }
+
+    try {
+        const url = await toDataURL(latestQR);
+        res.send(`
+            <div style="text-align:center; margin-top:30px; font-family:sans-serif;">
+                <h2>📱 Scan QR Code WhatsApp Bot</h2>
+                <p>Gunakan WhatsApp di HP kamu untuk scan QR di bawah ini:</p>
+                <img src="${url}" alt="QR Code" style="width:280px;height:280px; border: 5px solid #ccc; border-radius: 10px;" />
+                <p style="color:gray; font-size:12px; margin-top:20px;">Refresh halaman ini jika QR kedaluwarsa.</p>
+            </div>
+        `);
+    } catch (err) {
+        res.status(500).send('Gagal generate QR Code');
+    }
+});
+
+app.listen(port, () => {
+    console.log(`Web server QR aktif di port ${port}`);
+});
 
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
@@ -17,14 +63,19 @@ async function connectToWhatsApp() {
         const { connection, lastDisconnect, qr } = update;
         
         if (qr) {
-            console.log("👉 Scan QR Code di bawah ini menggunakan WhatsApp di HP kamu:");
-            qrcode.generate(qr, { small: true });
+            latestQR = qr;
+            connectionStatus = 'Menunggu Scan QR';
+            console.log("👉 QR Code baru diterima, silakan buka browser web app kamu.");
         }
 
         if (connection === 'close') {
+            connectionStatus = 'Terputus';
+            latestQR = '';
             const shouldReconnect = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) connectToWhatsApp();
         } else if (connection === 'open') {
+            connectionStatus = 'Terhubung';
+            latestQR = '';
             console.log('✅ Bot WhatsApp berhasil terhubung dan aktif!');
         }
     });
