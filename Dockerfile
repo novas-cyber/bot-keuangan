@@ -3,4 +3,4 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
-CMD ["node", "indeks.js"]
+CMD ["node", "index.js"]
